@@ -1,1 +1,13 @@
-{"addons":{"assd-house-index@ao-tools.local":{"updates":[]}}}
+{
+  "addons": {
+    "assd-house-index@ao-tools.local": {
+      "updates": [
+        {
+          "version": "0.1.0",
+          "update_link": "https://raw.githubusercontent.com/KaiserXanderW/assd-house-index-releases/main/xpi/assd-house-index-0.1.0.xpi",
+          "update_hash": "sha256:a2cbbb2ff388d3e77fac04e45a0804a79359ebb31c6e0b4ab80b512da08450fa"
+        }
+      ]
+    }
+  }
+}
