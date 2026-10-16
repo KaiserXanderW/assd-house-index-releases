@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         assd-house-index
 // @namespace    https://github.com/KaiserXanderW/assd-house-index-releases
-// @version      0.1.2
+// @version      0.1.3
 // @description  Search the house list and open a house's page in the booking system. The list is imported from a file and stays in this browser.
 // @match        https://*.assd.com/*
 // @match        https://botfriendsx.com/project/*/handover/tool/handover
@@ -464,7 +464,7 @@ ${t.line2}`), li;
       let cur = list.querySelector(".highlight"), idx = items.indexOf(cur), next = idx < 0 ? step === 1 ? 0 : items.length - 1 : (idx + step + items.length) % items.length;
       for (let li of items) li.classList.remove("highlight");
       items[next].classList.add("highlight"), items[next].scrollIntoView?.({ block: "nearest" });
-    }, keyTarget = deps.keyTarget ?? doc, onKey = (e) => {
+    }, onKey = (e) => {
       if (e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey && e.key.toLowerCase() === "s") {
         e.preventDefault(), deps.ctrlS?.() !== !1 && deps.close();
         return;
@@ -475,7 +475,7 @@ ${t.line2}`), li;
       }
       e.target === search && (e.key === "ArrowDown" ? (e.preventDefault(), move(1)) : e.key === "ArrowUp" ? (e.preventDefault(), move(-1)) : e.key === "Enter" && (e.preventDefault(), activate(list.querySelector(".highlight"), e.ctrlKey || e.metaKey)));
     };
-    return keyTarget.addEventListener("keydown", onKey, !0), showFullList("name"), {
+    return doc.addEventListener("keydown", onKey, !0), showFullList("name"), {
       reset() {
         search.value = "", showFullList("name");
       },
@@ -484,7 +484,7 @@ ${t.line2}`), li;
       },
       refresh: render,
       destroy() {
-        keyTarget.removeEventListener("keydown", onKey, !0), root.textContent = "";
+        doc.removeEventListener("keydown", onKey, !0), root.textContent = "";
       }
     };
   }
@@ -788,16 +788,6 @@ ahi-panel#ahi-panel ahi-bar-group {
   gap: 8px !important;
 }
 
-/* Block, not flex: the panel inside is measured at max-content
-   (panel.ts measureNatural), and as a growing flex item it would always
-   measure the slot's current width. */
-ahi-panel#ahi-panel ahi-panel-root {
-  display: block !important;
-  flex: 1 1 auto !important;
-  min-width: 0 !important;
-  min-height: 0 !important;
-}
-
 ahi-toast {
   all: initial !important;
   position: fixed !important;
@@ -814,26 +804,6 @@ ahi-toast {
   white-space: normal !important;
 }
 ahi-toast[hidden] { display: none !important; }
-`;
-
-  // static/userscript-panel.css
-  var userscript_panel_default = `/* Userscript only: inside the panel's shadow root, after panel.css. Does what
-   panel.css's html/body and html.ahi-embed rules do in the extension's iframe
-   (those selectors match nothing in a shadow root). */
-
-#app.ahi-panel {
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  max-width: none;
-  max-height: none;
-  background: #222;
-  color: #fff;
-  font-family: Arial, sans-serif;
-  color-scheme: dark;
-  overflow: hidden;
-}
 `;
 
   // src/userscript.ts
@@ -857,7 +827,7 @@ ahi-toast[hidden] { display: none !important; }
     if (doc.getElementById("ahi-launcher")) return null;
     deps.addStyle(launcher_default + `
 ` + userscript_default);
-    let { storage } = deps, pattern = findSiteForUrl(deps.href, POSITION_SITES), siteKey = pattern ? siteKeyFromPattern(pattern) : siteKeyForUrl(deps.href) ?? "", data = await loadHouses(storage).catch(() => null), panel = null, toastEl = doc.createElement("ahi-toast");
+    let { storage } = deps, pattern = findSiteForUrl(deps.href, POSITION_SITES), siteKey = pattern ? siteKeyFromPattern(pattern) : siteKeyForUrl(deps.href) ?? "", data = await loadHouses(storage).catch(() => null), panel = null, panelFrame = null, toastEl = doc.createElement("ahi-toast");
     toastEl.hidden = !0;
     let toastTimer = 0, win = doc.defaultView ?? window, toast = (text) => {
       toastEl.textContent = text;
@@ -869,7 +839,7 @@ ahi-toast[hidden] { display: none !important; }
       data = await loadHouses(storage).catch(() => null), panel?.refresh();
     }, importText = async (name, text) => {
       let r = await importHouses(storage, text);
-      toast(importMessage(name, r)), await reload(), launcher.isOpen() && panel?.focusInput();
+      toast(importMessage(name, r)), await reload(), launcher.isOpen() && (panelFrame?.focus(), panel?.focusInput());
     }, pickFile = () => {
       if (deps.pickFile) {
         deps.pickFile((n, t) => void importText(n, t));
@@ -898,35 +868,36 @@ ahi-toast[hidden] { display: none !important; }
       buttons: [{ label: "Import list", onClick: pickFile }],
       embed: {
         mount(slot) {
-          let host = doc.createElement("ahi-panel-root");
-          slot.appendChild(host);
-          let shadow = host.attachShadow({ mode: "closed" }), css = panel_default + `
-` + userscript_panel_default;
-          try {
-            let sheet = new CSSStyleSheet();
-            sheet.replaceSync(css), shadow.adoptedStyleSheets = [sheet];
-          } catch {
-            let style = doc.createElement("style");
-            style.textContent = css, shadow.appendChild(style);
-          }
-          let root = doc.createElement("div");
-          root.id = "app", shadow.appendChild(root), panel = mountPanel(root, {
-            doc,
-            keyTarget: shadow,
-            data: () => data,
-            // Ctrl+S: the launcher's document listener (capture) toggles first;
-            // the panel's own close then finds it closed.
-            close: () => launcher.close(!0),
-            openOptions: pickFile,
-            noDataText: "No house list loaded. Click here to import the file (assd-houses JSON).",
-            onSize: (size) => launcher.setContentSize(size),
-            openLink: (url, background) => {
-              deps.openInTab(url, background), background || launcher.close();
+          let frame = doc.createElement("iframe");
+          frame.className = "ahi-frame", frame.title = "House index", slot.appendChild(frame);
+          let build = () => {
+            let fdoc = frame.contentDocument;
+            if (!fdoc || fdoc.getElementById("app")) return;
+            fdoc.documentElement.classList.add("ahi-embed");
+            try {
+              let sheet = new fdoc.defaultView.CSSStyleSheet();
+              sheet.replaceSync(panel_default), fdoc.adoptedStyleSheets = [sheet];
+            } catch {
+              let style = fdoc.createElement("style");
+              style.textContent = panel_default, fdoc.head.appendChild(style);
             }
-          });
+            let root = fdoc.createElement("div");
+            root.id = "app", fdoc.body.appendChild(root), panel?.destroy(), panel = mountPanel(root, {
+              doc: fdoc,
+              data: () => data,
+              close: () => launcher.close(!0),
+              openOptions: pickFile,
+              noDataText: "No house list loaded. Click here to import the file (assd-houses JSON).",
+              onSize: (size) => launcher.setContentSize(size),
+              openLink: (url, background) => {
+                deps.openInTab(url, background), background || launcher.close();
+              }
+            }), launcher.isOpen() && (panel.reset(), frame.focus(), panel.focusInput());
+          };
+          build(), frame.addEventListener("load", build), panelFrame = frame;
         },
         opened() {
-          panel?.reset(), panel?.focusInput();
+          panel?.reset(), panelFrame?.focus(), panel?.focusInput();
         }
       }
     });
